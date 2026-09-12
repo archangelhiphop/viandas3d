@@ -87,6 +87,12 @@
   <span class="selected-label" id="selectedLabel">none selected</span>
   <button onclick="adjustScale(-0.01)">− Smaller</button>
   <button onclick="adjustScale(0.01)">+ Bigger</button>
+  <button onclick="adjustRotation('x', -90)">Tilt X−</button>
+  <button onclick="adjustRotation('x', 90)">Tilt X+</button>
+  <button onclick="adjustRotation('y', -90)">Turn Y−</button>
+  <button onclick="adjustRotation('y', 90)">Turn Y+</button>
+  <button onclick="adjustRotation('z', -90)">Spin Z−</button>
+  <button onclick="adjustRotation('z', 90)">Spin Z+</button>
   <button onclick="exportLayout()">Copy Layout</button>
 </div>
 <pre id="layoutOutput"></pre>
@@ -242,12 +248,16 @@ CONFIG.pieces.forEach(function(p) {
     }
 
     mesh.position.set(p.x, p.y, p.z);
+    mesh.rotation.x = THREE.MathUtils.degToRad(p.rotationX || 0);
+    mesh.rotation.y = THREE.MathUtils.degToRad(p.rotationY || 0);
     mesh.rotation.z = THREE.MathUtils.degToRad(p.rotationZ || 0);
     mesh.userData.id = p.id;
     mesh.userData.src = p.src;
     mesh.userData.baseW = img.width;
     mesh.userData.baseH = img.height;
     mesh.userData.flat = !!p.flat;
+    mesh.userData.targetRotationX = mesh.rotation.x;
+    mesh.userData.targetRotationY = mesh.rotation.y;
     mesh.userData.targetRotationZ = mesh.rotation.z;
     scene.add(mesh);
     pieces.push(mesh);
@@ -276,6 +286,8 @@ updateCameraFromOrbit();
 function animate() {
   requestAnimationFrame(animate);
   pieces.forEach(function(m) {
+    m.rotation.x += (m.userData.targetRotationX - m.rotation.x) * 0.15;
+    m.rotation.y += (m.userData.targetRotationY - m.rotation.y) * 0.15;
     m.rotation.z += (m.userData.targetRotationZ - m.rotation.z) * 0.15;
   });
   renderer.render(scene, camera);
@@ -298,6 +310,14 @@ if (window.location.search.includes("edit=1")) {
 
 function updateSelectedLabel() {
   document.getElementById('selectedLabel').textContent = selectedPieceId ? selectedPieceId : 'none selected';
+}
+
+function adjustRotation(axis, degrees) {
+  if (!selected) return;
+  const rad = THREE.MathUtils.degToRad(degrees);
+  if (axis === 'x') selected.userData.targetRotationX += rad;
+  if (axis === 'y') selected.userData.targetRotationY += rad;
+  if (axis === 'z') selected.userData.targetRotationZ += rad;
 }
 
 function adjustScale(delta) {
@@ -332,6 +352,31 @@ let moved = false;
 let lastTapTime = 0;
 const TAP_MOVE_THRESHOLD = 8;
 const DOUBLE_TAP_WINDOW = 350;
+
+/* ---------------- Simple box collision — blocks let pieces stop against
+   each other instead of overlapping, using each piece's actual footprint
+   (including rotation and thickness). A small tolerance keeps pieces that
+   already sit close together in the starting layout from getting stuck. */
+const COLLISION_MARGIN = 4;
+
+function collidesAt(mesh, x, y, z) {
+  const orig = mesh.position.clone();
+  mesh.position.set(x, y, z);
+  mesh.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(mesh);
+  box.expandByScalar(-COLLISION_MARGIN);
+  mesh.position.copy(orig);
+  mesh.updateMatrixWorld(true);
+
+  for (const other of pieces) {
+    if (other === mesh) continue;
+    other.updateMatrixWorld(true);
+    const otherBox = new THREE.Box3().setFromObject(other);
+    otherBox.expandByScalar(-COLLISION_MARGIN);
+    if (box.intersectsBox(otherBox)) return true;
+  }
+  return false;
+}
 
 let activePointers = new Map();
 let interactionTarget = null;
@@ -382,8 +427,12 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 
     if (interactionTarget === 'piece' && selected) {
       const depthScale = (radius - selected.position.z) / radius;
-      selected.position.x += dx * depthScale;
-      selected.position.y -= dy * depthScale;
+      const newX = selected.position.x + dx * depthScale;
+      const newY = selected.position.y - dy * depthScale;
+      if (!collidesAt(selected, newX, newY, selected.position.z)) {
+        selected.position.x = newX;
+        selected.position.y = newY;
+      }
       dragStart = { x: e.clientX, y: e.clientY };
     } else if (interactionTarget === 'background' && orbitStart) {
       const totalDx = e.clientX - orbitStart.x;
@@ -398,7 +447,10 @@ renderer.domElement.addEventListener('pointermove', (e) => {
     const dist = pointerDist(activePointers);
     if (interactionTarget === 'piece' && selected && pinchStartDist) {
       const delta = (dist - pinchStartDist) * 0.6;
-      selected.position.z = pinchStartZ + delta;
+      const newZ = pinchStartZ + delta;
+      if (!collidesAt(selected, selected.position.x, selected.position.y, newZ)) {
+        selected.position.z = newZ;
+      }
     } else if (interactionTarget === 'background' && pinchStartDist) {
       const delta = (dist - pinchStartDist);
       radius = Math.max(MIN_RADIUS, Math.min(MAX_RADIUS, radius - delta * 1.5));
@@ -444,13 +496,19 @@ renderer.domElement.addEventListener('wheel', (e) => {
 
 /* ---------------- Export current layout (positioning mode) ---------------- */
 function exportLayout() {
+  function norm360(rad) {
+    return (((THREE.MathUtils.radToDeg(rad) % 360) + 360) % 360).toFixed(0);
+  }
   const lines = CONFIG.pieces.map(function(p) {
     const mesh = pieces.find(m => m.userData.id === p.id);
-    const rotY = ((THREE.MathUtils.radToDeg(mesh.userData.targetRotationZ) % 360) + 360) % 360;
+    const rotX = norm360(mesh.userData.targetRotationX);
+    const rotY = norm360(mesh.userData.targetRotationY);
+    const rotZ = norm360(mesh.userData.targetRotationZ);
     const flatPart = p.flat ? ', flat: true' : '';
     return '    { id: "' + p.id + '", src: "' + p.src + '", x: ' +
       mesh.position.x.toFixed(1) + ', y: ' + mesh.position.y.toFixed(1) + ', z: ' + mesh.position.z.toFixed(1) +
-      ', rotationZ: ' + rotY.toFixed(0) + ', scale: ' + p.scale.toFixed(3) + flatPart + ' },';
+      ', rotationX: ' + rotX + ', rotationY: ' + rotY + ', rotationZ: ' + rotZ +
+      ', scale: ' + p.scale.toFixed(3) + flatPart + ' },';
   });
   const output = "pieces: [\n" + lines.join("\n") + "\n  ]";
   const out = document.getElementById('layoutOutput');
