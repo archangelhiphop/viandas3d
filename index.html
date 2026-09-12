@@ -107,7 +107,6 @@
   <button onclick="adjustRotation('y', 90)">Turn Y+</button>
   <button onclick="adjustRotation('z', -90)">Spin Z−</button>
   <button onclick="adjustRotation('z', 90)">Spin Z+</button>
-  <button onclick="exportLayout()">Copy Layout</button>
 </div>
 <pre id="layoutOutput"></pre>
 
@@ -507,7 +506,12 @@ function exportLayout() {
   out.textContent = output;
   out.classList.add('active');
   if (navigator.clipboard) navigator.clipboard.writeText(output);
+  console.log(output);
 }
+// Not exposed as a visible button — call exportLayout() from the browser
+// console (right-click → Inspect → Console) when you personally want to
+// save the current arrangement. Visitors have no way to trigger this.
+window.exportLayout = exportLayout;
 </script>
 
 </body>
