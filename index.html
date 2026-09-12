@@ -70,12 +70,26 @@
     pointer-events: none;
   }
   #hintBar .hint { color: #c9a45c; font-weight: 600; }
+
+  #fullscreenBtn {
+    position: fixed; top: 14px; right: 16px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.25);
+    color: #f4ede2;
+    width: 40px; height: 40px;
+    border-radius: 6px;
+    font-size: 16px;
+    cursor: pointer;
+    z-index: 20;
+  }
 </style>
 </head>
 <body>
 
 <div id="canvas-wrap"></div>
 <div id="_preload_div_">Loading…</div>
+
+<button id="fullscreenBtn" title="Fullscreen">⛶</button>
 
 <div id="hintBar">
   On a <span class="hint">piece</span>: drag to move, pinch to push/pull, double-tap to rotate.<br>
@@ -307,6 +321,16 @@ let selectedPieceId = null;
 if (window.location.search.includes("edit=1")) {
   document.getElementById("editBar").classList.add("active");
 }
+
+/* ---------------- Fullscreen toggle ---------------- */
+const fullscreenBtn = document.getElementById('fullscreenBtn');
+fullscreenBtn.addEventListener('click', () => {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen();
+  }
+});
 
 function updateSelectedLabel() {
   document.getElementById('selectedLabel').textContent = selectedPieceId ? selectedPieceId : 'none selected';
