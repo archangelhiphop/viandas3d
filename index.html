@@ -105,16 +105,16 @@ const CONFIG = {
   backgroundOverfill: 1.08,
   pieceThickness: 20,
   pieces: [
-    { id: "platanogreen", src: "platanogreen.png", x: 61.0,   y: 126.0,  z: 0, rotationY: 0, scale: 0.180 },
-    { id: "pana",         src: "pana.png",         x: 63.5,   y: -91.0,  z: 0, rotationY: 0, scale: 0.180 },
-    { id: "yucca",        src: "yucca.png",        x: -86.5,  y: 123.5,  z: 0, rotationY: 0, scale: 0.182 },
-    { id: "platanoyellow",src: "platanoyellow.png",x: -133.0, y: -144.0, z: 0, rotationY: 0, scale: 0.176 },
-    { id: "yautia",       src: "yautia.png",       x: -30.5,  y: -98.5,  z: 0, rotationY: 0, scale: 0.176 },
-    { id: "batata",       src: "batata.png",       x: 17.5,   y: -232.0, z: 0, rotationY: 0, scale: 0.182 },
-    { id: "guineogreen",  src: "guineogreen.png",  x: -165.0, y: 282.5,  z: 0, rotationY: 0, scale: 0.204 },
-    { id: "guineoblack",  src: "guineoblack.png",  x: -122.5, y: 281.0,  z: 0, rotationY: 0, scale: 0.214 },
-    { id: "machete",      src: "machete.png",      x: 157.5,  y: -128.5, z: 0, rotationY: 0, scale: 0.172 },
-    { id: "pava",         src: "pava.png",         x: 186.5,  y: 179.5,  z: 0, rotationY: 0, scale: 0.154 },
+    { id: "platanogreen", src: "platanogreen.png", x: 61.0,   y: 126.0,  z: 0, rotationZ: 0, scale: 0.180 },
+    { id: "pana",         src: "pana.png",         x: 63.5,   y: -91.0,  z: 0, rotationZ: 0, scale: 0.180 },
+    { id: "yucca",        src: "yucca.png",        x: -86.5,  y: 123.5,  z: 0, rotationZ: 0, scale: 0.182 },
+    { id: "platanoyellow",src: "platanoyellow.png",x: -133.0, y: -144.0, z: 0, rotationZ: 0, scale: 0.176 },
+    { id: "yautia",       src: "yautia.png",       x: -30.5,  y: -98.5,  z: 0, rotationZ: 0, scale: 0.176 },
+    { id: "batata",       src: "batata.png",       x: 17.5,   y: -232.0, z: 0, rotationZ: 0, scale: 0.182 },
+    { id: "guineogreen",  src: "guineogreen.png",  x: -165.0, y: 282.5,  z: 0, rotationZ: 0, scale: 0.204 },
+    { id: "guineoblack",  src: "guineoblack.png",  x: -122.5, y: 281.0,  z: 0, rotationZ: 0, scale: 0.214 },
+    { id: "machete",      src: "machete.png",      x: 157.5,  y: -128.5, z: 0, rotationZ: 0, scale: 0.172 },
+    { id: "pava",         src: "pava.png",         x: 186.5,  y: 179.5,  z: 0, rotationZ: 0, scale: 0.154, flat: true },
   ]
 };
 /* ===================================================================== */
@@ -219,22 +219,36 @@ CONFIG.pieces.forEach(function(p) {
     const w = img.width * p.scale;
     const h = img.height * p.scale;
 
-    const frontMat = new THREE.MeshStandardMaterial({
-      map: tex,
-      transparent: true,
-      alphaTest: 0.05
-    });
-    const sideMat = new THREE.MeshStandardMaterial({ map: woodTexture });
-    const materials = [sideMat, sideMat, sideMat, sideMat, frontMat, sideMat];
+    let mesh;
+    if (p.flat) {
+      // Some shapes (thin, irregular silhouettes) don't read well as a
+      // chunky box — render these as a plain flat, double-sided image instead.
+      const frontMat = new THREE.MeshStandardMaterial({
+        map: tex,
+        transparent: true,
+        alphaTest: 0.05,
+        side: THREE.DoubleSide
+      });
+      mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), frontMat);
+    } else {
+      const frontMat = new THREE.MeshStandardMaterial({
+        map: tex,
+        transparent: true,
+        alphaTest: 0.05
+      });
+      const sideMat = new THREE.MeshStandardMaterial({ map: woodTexture });
+      const materials = [sideMat, sideMat, sideMat, sideMat, frontMat, sideMat];
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, CONFIG.pieceThickness), materials);
+    }
 
-    const geo = new THREE.BoxGeometry(w, h, CONFIG.pieceThickness);
-    const mesh = new THREE.Mesh(geo, materials);
     mesh.position.set(p.x, p.y, p.z);
-    mesh.rotation.y = THREE.MathUtils.degToRad(p.rotationY || 0);
+    mesh.rotation.z = THREE.MathUtils.degToRad(p.rotationZ || 0);
     mesh.userData.id = p.id;
     mesh.userData.src = p.src;
     mesh.userData.baseW = img.width;
     mesh.userData.baseH = img.height;
+    mesh.userData.flat = !!p.flat;
+    mesh.userData.targetRotationZ = mesh.rotation.z;
     scene.add(mesh);
     pieces.push(mesh);
     onAssetLoaded();
@@ -261,6 +275,9 @@ updateCameraFromOrbit();
 
 function animate() {
   requestAnimationFrame(animate);
+  pieces.forEach(function(m) {
+    m.rotation.z += (m.userData.targetRotationZ - m.rotation.z) * 0.15;
+  });
   renderer.render(scene, camera);
 }
 
@@ -399,7 +416,7 @@ function endPointer(e) {
     if (interactionTarget === 'piece' && selected && !moved) {
       const now = Date.now();
       if (now - lastTapTime < DOUBLE_TAP_WINDOW) {
-        selected.rotation.y += Math.PI / 2;
+        selected.userData.targetRotationZ += Math.PI / 2;
         lastTapTime = 0;
       } else {
         lastTapTime = now;
@@ -429,10 +446,11 @@ renderer.domElement.addEventListener('wheel', (e) => {
 function exportLayout() {
   const lines = CONFIG.pieces.map(function(p) {
     const mesh = pieces.find(m => m.userData.id === p.id);
-    const rotY = ((THREE.MathUtils.radToDeg(mesh.rotation.y) % 360) + 360) % 360;
+    const rotY = ((THREE.MathUtils.radToDeg(mesh.userData.targetRotationZ) % 360) + 360) % 360;
+    const flatPart = p.flat ? ', flat: true' : '';
     return '    { id: "' + p.id + '", src: "' + p.src + '", x: ' +
       mesh.position.x.toFixed(1) + ', y: ' + mesh.position.y.toFixed(1) + ', z: ' + mesh.position.z.toFixed(1) +
-      ', rotationY: ' + rotY.toFixed(0) + ', scale: ' + p.scale.toFixed(3) + ' },';
+      ', rotationZ: ' + rotY.toFixed(0) + ', scale: ' + p.scale.toFixed(3) + flatPart + ' },';
   });
   const output = "pieces: [\n" + lines.join("\n") + "\n  ]";
   const out = document.getElementById('layoutOutput');
