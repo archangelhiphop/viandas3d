@@ -377,31 +377,6 @@ let lastTapTime = 0;
 const TAP_MOVE_THRESHOLD = 8;
 const DOUBLE_TAP_WINDOW = 350;
 
-/* ---------------- Simple box collision — blocks let pieces stop against
-   each other instead of overlapping, using each piece's actual footprint
-   (including rotation and thickness). A small tolerance keeps pieces that
-   already sit close together in the starting layout from getting stuck. */
-const COLLISION_MARGIN = 4;
-
-function collidesAt(mesh, x, y, z) {
-  const orig = mesh.position.clone();
-  mesh.position.set(x, y, z);
-  mesh.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(mesh);
-  box.expandByScalar(-COLLISION_MARGIN);
-  mesh.position.copy(orig);
-  mesh.updateMatrixWorld(true);
-
-  for (const other of pieces) {
-    if (other === mesh) continue;
-    other.updateMatrixWorld(true);
-    const otherBox = new THREE.Box3().setFromObject(other);
-    otherBox.expandByScalar(-COLLISION_MARGIN);
-    if (box.intersectsBox(otherBox)) return true;
-  }
-  return false;
-}
-
 let activePointers = new Map();
 let interactionTarget = null;
 let pinchStartDist = null;
@@ -451,12 +426,8 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 
     if (interactionTarget === 'piece' && selected) {
       const depthScale = (radius - selected.position.z) / radius;
-      const newX = selected.position.x + dx * depthScale;
-      const newY = selected.position.y - dy * depthScale;
-      if (!collidesAt(selected, newX, newY, selected.position.z)) {
-        selected.position.x = newX;
-        selected.position.y = newY;
-      }
+      selected.position.x += dx * depthScale;
+      selected.position.y -= dy * depthScale;
       dragStart = { x: e.clientX, y: e.clientY };
     } else if (interactionTarget === 'background' && orbitStart) {
       const totalDx = e.clientX - orbitStart.x;
@@ -471,10 +442,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
     const dist = pointerDist(activePointers);
     if (interactionTarget === 'piece' && selected && pinchStartDist) {
       const delta = (dist - pinchStartDist) * 0.6;
-      const newZ = pinchStartZ + delta;
-      if (!collidesAt(selected, selected.position.x, selected.position.y, newZ)) {
-        selected.position.z = newZ;
-      }
+      selected.position.z = pinchStartZ + delta;
     } else if (interactionTarget === 'background' && pinchStartDist) {
       const delta = (dist - pinchStartDist);
       radius = Math.max(MIN_RADIUS, Math.min(MAX_RADIUS, radius - delta * 1.5));
